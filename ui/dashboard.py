@@ -2,6 +2,7 @@ import curses
 import time
 from pathlib import Path
 from ui.components import safe_addstr, draw_frame
+from core.dashboard_status import build_dashboard_snapshot
 
 MENU = ["Configure Vault path", "Initialize Git repository", "Git status",
         "Configure GitHub remote", "Commit local changes", "Push to GitHub",
@@ -13,31 +14,43 @@ def dashboard(stdscr, config):
     next_auto_sync = time.monotonic() + max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
     stdscr.timeout(1000)
     while True:
-        draw_frame(stdscr, "OBSIDIAN SYNC  v0.1.0")
+        draw_frame(stdscr, "OBSIDIAN SYNC  v0.5.0")
         h, w = stdscr.getmaxyx()
-        vault = config.data.get("vault_path") or "(not configured)"
+        snapshot = build_dashboard_snapshot(config.data)
+        interval = snapshot["interval"]
         safe_addstr(stdscr, 3, 3, "VAULT", curses.A_BOLD)
-        safe_addstr(stdscr, 4, 3, vault)
-        safe_addstr(stdscr, 6, 3, f"Branch: {config.data.get('branch', 'main')}")
-        auto_enabled = bool(config.data.get("auto_sync_enabled", False))
-        interval = max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
-        auto_label = f"enabled (every {interval}s)" if auto_enabled else "disabled"
-        safe_addstr(stdscr, 7, 3, "Auto-sync: " + auto_label)
-        safe_addstr(stdscr, 9, 3, "MAIN MENU", curses.A_BOLD)
-        for i, item in enumerate(MENU):
-            attr = curses.A_REVERSE if i == selected else curses.A_NORMAL
-            safe_addstr(stdscr, 11 + i, 5, item, attr)
+        safe_addstr(stdscr, 4, 3, snapshot["vault"])
+        safe_addstr(stdscr, 6, 3,
+                    f"Repository: {snapshot['repository']}   Branch: {snapshot['branch']}")
+        safe_addstr(stdscr, 7, 3, f"Remote: {snapshot['remote']}")
+        change_label = "unknown" if snapshot["changes"] is None else str(snapshot["changes"])
+        safe_addstr(stdscr, 8, 3, f"Local changes: {change_label}")
+        auto_label = f"ON / every {snapshot['interval']}s" if snapshot["auto_enabled"] else "OFF"
+        safe_addstr(stdscr, 9, 3, f"Auto-sync: {auto_label}")
+        safe_addstr(stdscr, 10, 3,
+                    f"Last sync: {snapshot['last_sync_at']} [{snapshot['last_sync_status']}]")
+        if snapshot["last_sync_message"]:
+            safe_addstr(stdscr, 11, 3, snapshot["last_sync_message"].replace("\n", " | "))
+        safe_addstr(stdscr, 13, 3, "MAIN MENU", curses.A_BOLD)
+        # Keep the menu usable on small Android terminal sizes.
+        visible_rows = max(1, h - 16)
+        start = min(max(0, selected - visible_rows + 1), max(0, len(MENU) - visible_rows))
+        for row, menu_index in enumerate(range(start, min(len(MENU), start + visible_rows))):
+            attr = curses.A_REVERSE if menu_index == selected else curses.A_NORMAL
+            safe_addstr(stdscr, 14 + row, 5, MENU[menu_index], attr)
         stdscr.refresh()
         key = stdscr.getch()
-        if auto_enabled and time.monotonic() >= next_auto_sync:
+        if snapshot["auto_enabled"] and time.monotonic() >= next_auto_sync:
             try:
                 result = _sync_manager(config).auto_sync(
                     backup=config.data.get("backup_before_pull", True)
                 )
+                _record_sync(config, "Success", result)
                 message(stdscr, "AUTO-SYNC COMPLETED\n" + result)
             except Exception as exc:
+                _record_sync(config, "Error", str(exc))
                 message(stdscr, f"AUTO-SYNC STOPPED\n{exc}")
-            next_auto_sync = time.monotonic() + interval
+            next_auto_sync = time.monotonic() + snapshot["interval"]
         if key in (curses.KEY_UP, ord("k")):
             selected = (selected - 1) % len(MENU)
         elif key in (curses.KEY_DOWN, ord("j")):
@@ -69,7 +82,7 @@ def dashboard(stdscr, config):
             elif selected == 9:
                 show_environment(stdscr)
             elif selected == 10:
-                message(stdscr, "Obsidian Sync v0.4.0 - automatic sync scheduler.")
+                message(stdscr, "Obsidian Sync v0.5.0 - dashboard and sync monitor.")
             else:
                 return
         elif key in (ord("q"), ord("Q")):
@@ -220,9 +233,21 @@ def run_sync_action(stdscr, config, action):
         result = manager.push() if action == "push" else manager.pull(
             backup=config.data.get("backup_before_pull", True)
         )
+        _record_sync(config, "Success", result)
         message(stdscr, result)
     except SyncError as exc:
+        _record_sync(config, "Error", str(exc))
         message(stdscr, f"Sync error: {exc}")
+
+
+
+def _record_sync(config, status, detail):
+    """Persist a short, non-secret summary of the latest sync attempt."""
+    from datetime import datetime
+    config.set("last_sync_at", datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z"))
+    config.set("last_sync_status", str(status))
+    # Avoid filling the dashboard with long Git diagnostics.
+    config.set("last_sync_message", str(detail).replace("\r", " ").replace("\n", " | ")[:240])
 
 
 def configure_auto_interval(stdscr, config):
