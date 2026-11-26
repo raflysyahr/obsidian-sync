@@ -1,0 +1,16 @@
+{
+  "vault_path": "",
+  "remote_url": "",
+  "branch": "main",
+  "sync_mode": "manual_and_auto",
+  "auto_sync_enabled": false,
+  "auto_sync_interval_seconds": 300,
+  "exclude": [
+    ".obsidian/workspace.json",
+    ".obsidian/workspace-mobile.json",
+    ".trash/",
+    ".DS_Store",
+    "Thumbs.db"
+  ],
+  "backup_before_pull": true
+}
