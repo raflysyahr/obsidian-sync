@@ -51,3 +51,11 @@ current branch. A divergent history or Git/network/authentication error stops
 the cycle; no force-push, reset, rebase, or automatic conflict resolution is
 performed. The first remote publication should be done manually with Stage 3
 Push before enabling auto-sync. Keep the app running for scheduled syncs.
+
+
+## Stage 6: Security & Recovery
+- Create ZIP backups of the Vault (excluding `.git`).
+- Verify backup file hashes before restore.
+- Restore only to a new or empty destination; the configured Vault is never overwritten.
+- Security check warns about embedded credentials in the Git remote URL and broad settings-file permissions.
+- GitHub tokens are not stored by this application.

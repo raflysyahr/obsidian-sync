@@ -7,14 +7,15 @@ from core.dashboard_status import build_dashboard_snapshot
 MENU = ["Configure Vault path", "Initialize Git repository", "Git status",
         "Configure GitHub remote", "Commit local changes", "Push to GitHub",
         "Pull from GitHub (safe)", "Toggle auto-sync", "Set auto-sync interval",
-        "Environment check", "About", "Quit"]
+        "Create Vault backup", "Verify latest backup", "Restore backup to new folder",
+        "Security check", "Environment check", "About", "Quit"]
 
 def dashboard(stdscr, config):
     selected = 0
     next_auto_sync = time.monotonic() + max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
     stdscr.timeout(1000)
     while True:
-        draw_frame(stdscr, "OBSIDIAN SYNC  v0.5.0")
+        draw_frame(stdscr, "OBSIDIAN SYNC  v0.6.0")
         h, w = stdscr.getmaxyx()
         snapshot = build_dashboard_snapshot(config.data)
         interval = snapshot["interval"]
@@ -80,9 +81,17 @@ def dashboard(stdscr, config):
                 interval = max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
                 next_auto_sync = time.monotonic() + interval
             elif selected == 9:
-                show_environment(stdscr)
+                create_vault_backup(stdscr, config)
             elif selected == 10:
-                message(stdscr, "Obsidian Sync v0.5.0 - dashboard and sync monitor.")
+                verify_latest_backup(stdscr, config)
+            elif selected == 11:
+                restore_backup_ui(stdscr, config)
+            elif selected == 12:
+                show_security_check(stdscr, config)
+            elif selected == 13:
+                show_environment(stdscr)
+            elif selected == 14:
+                message(stdscr, "Obsidian Sync v0.6.0 - security and recovery tools.")
             else:
                 return
         elif key in (ord("q"), ord("Q")):
@@ -269,3 +278,65 @@ def configure_auto_interval(stdscr, config):
         return
     config.set("auto_sync_interval_seconds", seconds)
     message(stdscr, f"Auto-sync interval saved: {seconds} seconds.")
+
+
+
+def _recovery_vault(config):
+    vault = config.data.get("vault_path", "")
+    if not vault:
+        raise ValueError("Configure the Vault path first.")
+    return Path(vault).expanduser().resolve()
+
+
+def create_vault_backup(stdscr, config):
+    from core.recovery import create_backup, RecoveryError
+    try:
+        archive = create_backup(_recovery_vault(config))
+        message(stdscr, f"Backup created and verified:\\n{archive}")
+    except (RecoveryError, ValueError) as exc:
+        message(stdscr, f"Backup error: {exc}")
+
+
+def verify_latest_backup(stdscr, config):
+    from core.recovery import list_backups, verify_backup, RecoveryError
+    try:
+        backups = list_backups(_recovery_vault(config))
+        if not backups:
+            message(stdscr, "No backup archive found.")
+            return
+        info = verify_backup(backups[0])
+        message(stdscr, f"Backup integrity OK\\nFiles: {info['files']}\\nCreated: {info['created_at']}\\n{info['archive']}")
+    except (RecoveryError, ValueError) as exc:
+        message(stdscr, f"Verification error: {exc}")
+
+
+def restore_backup_ui(stdscr, config):
+    from core.recovery import list_backups, verify_backup, restore_to_new_directory, RecoveryError
+    try:
+        backups = list_backups(_recovery_vault(config))
+        if not backups:
+            message(stdscr, "No backup archive found.")
+            return
+        archive = backups[0]
+        verify_backup(archive)
+        destination = _read_line(
+            stdscr, "RESTORE BACKUP",
+            "New empty destination path (never your existing Vault):",
+            max_bytes=240,
+        )
+        if not destination:
+            message(stdscr, "Restore cancelled.")
+            return
+        restored = restore_to_new_directory(archive, destination)
+        message(stdscr, f"Restore completed to new folder:\\n{restored}")
+    except (RecoveryError, ValueError, OSError) as exc:
+        message(stdscr, f"Restore error: {exc}")
+
+
+def show_security_check(stdscr, config):
+    from core.recovery import security_report
+    warnings = security_report(
+        config.data.get("vault_path", ""),
+        config.path,
+    )
+    message(stdscr, "SECURITY CHECK\\n\\n" + "\\n".join(f"- {item}" for item in warnings))
