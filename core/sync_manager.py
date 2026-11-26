@@ -136,3 +136,21 @@ class SyncManager:
         if backup_path:
             return f"Fast-forward pull completed. Backup: {backup_path}"
         return "Fast-forward pull completed."
+    def auto_sync(self, backup=True):
+        """Commit Vault edits, fast-forward from origin, then push safely.
+
+        This deliberately never performs a merge commit, rebase, force-push, or
+        destructive reset. Divergent histories stop with an error.
+        """
+        status = self._run("status", "--porcelain=v1", "--untracked-files=all").stdout
+        if status.strip():
+            stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            commit_result = self.commit(f"Obsidian Sync auto-sync {stamp}")
+        else:
+            commit_result = "No uncommitted Vault changes."
+
+        # Pull first so a remote-only fast-forward is incorporated before push.
+        # If local and remote both advanced, pull's divergence guard stops here.
+        pull_result = self.pull(backup=backup)
+        push_result = self.push()
+        return f"{commit_result}\n{pull_result}\n{push_result}"

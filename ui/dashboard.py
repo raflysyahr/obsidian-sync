@@ -1,13 +1,17 @@
 import curses
+import time
 from pathlib import Path
 from ui.components import safe_addstr, draw_frame
 
 MENU = ["Configure Vault path", "Initialize Git repository", "Git status",
         "Configure GitHub remote", "Commit local changes", "Push to GitHub",
-        "Pull from GitHub (safe)", "Environment check", "About", "Quit"]
+        "Pull from GitHub (safe)", "Toggle auto-sync", "Set auto-sync interval",
+        "Environment check", "About", "Quit"]
 
 def dashboard(stdscr, config):
     selected = 0
+    next_auto_sync = time.monotonic() + max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
+    stdscr.timeout(1000)
     while True:
         draw_frame(stdscr, "OBSIDIAN SYNC  v0.1.0")
         h, w = stdscr.getmaxyx()
@@ -15,15 +19,25 @@ def dashboard(stdscr, config):
         safe_addstr(stdscr, 3, 3, "VAULT", curses.A_BOLD)
         safe_addstr(stdscr, 4, 3, vault)
         safe_addstr(stdscr, 6, 3, f"Branch: {config.data.get('branch', 'main')}")
-        safe_addstr(stdscr, 7, 3, "Auto-sync: " + (
-            "enabled" if config.data.get("auto_sync_enabled") else "disabled"
-        ))
+        auto_enabled = bool(config.data.get("auto_sync_enabled", False))
+        interval = max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
+        auto_label = f"enabled (every {interval}s)" if auto_enabled else "disabled"
+        safe_addstr(stdscr, 7, 3, "Auto-sync: " + auto_label)
         safe_addstr(stdscr, 9, 3, "MAIN MENU", curses.A_BOLD)
         for i, item in enumerate(MENU):
             attr = curses.A_REVERSE if i == selected else curses.A_NORMAL
             safe_addstr(stdscr, 11 + i, 5, item, attr)
         stdscr.refresh()
         key = stdscr.getch()
+        if auto_enabled and time.monotonic() >= next_auto_sync:
+            try:
+                result = _sync_manager(config).auto_sync(
+                    backup=config.data.get("backup_before_pull", True)
+                )
+                message(stdscr, "AUTO-SYNC COMPLETED\n" + result)
+            except Exception as exc:
+                message(stdscr, f"AUTO-SYNC STOPPED\n{exc}")
+            next_auto_sync = time.monotonic() + interval
         if key in (curses.KEY_UP, ord("k")):
             selected = (selected - 1) % len(MENU)
         elif key in (curses.KEY_DOWN, ord("j")):
@@ -44,9 +58,18 @@ def dashboard(stdscr, config):
             elif selected == 6:
                 run_sync_action(stdscr, config, "pull")
             elif selected == 7:
-                show_environment(stdscr)
+                enabled = not bool(config.data.get("auto_sync_enabled", False))
+                config.set("auto_sync_enabled", enabled)
+                next_auto_sync = time.monotonic() + interval
+                message(stdscr, "Auto-sync " + ("enabled." if enabled else "disabled."))
             elif selected == 8:
-                message(stdscr, "Obsidian Sync v0.3.0 - manual sync manager.")
+                configure_auto_interval(stdscr, config)
+                interval = max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
+                next_auto_sync = time.monotonic() + interval
+            elif selected == 9:
+                show_environment(stdscr)
+            elif selected == 10:
+                message(stdscr, "Obsidian Sync v0.4.0 - automatic sync scheduler.")
             else:
                 return
         elif key in (ord("q"), ord("Q")):
@@ -84,7 +107,9 @@ def message(stdscr, text):
     safe_addstr(stdscr, 4, 3, text)
     safe_addstr(stdscr, 7, 3, "Press any key to return...")
     stdscr.refresh()
+    stdscr.timeout(-1)
     stdscr.getch()
+    stdscr.timeout(1000)
 
 
 def _git_engine(config):
@@ -198,3 +223,24 @@ def run_sync_action(stdscr, config, action):
         message(stdscr, result)
     except SyncError as exc:
         message(stdscr, f"Sync error: {exc}")
+
+
+def configure_auto_interval(stdscr, config):
+    raw = _read_line(
+        stdscr, "AUTO-SYNC INTERVAL",
+        "Interval in seconds (minimum 60, maximum 86400):",
+        max_bytes=8,
+    )
+    if not raw:
+        message(stdscr, "Interval unchanged.")
+        return
+    try:
+        seconds = int(raw)
+    except ValueError:
+        message(stdscr, "Enter a whole number of seconds.")
+        return
+    if not 60 <= seconds <= 86400:
+        message(stdscr, "Interval must be between 60 and 86400 seconds.")
+        return
+    config.set("auto_sync_interval_seconds", seconds)
+    message(stdscr, f"Auto-sync interval saved: {seconds} seconds.")

@@ -50,6 +50,27 @@ class SyncManagerTests(unittest.TestCase):
         remote_log = git(self.root, "--git-dir", str(self.remote), "log", "--oneline", "-1", "refs/heads/main").stdout
         self.assertIn("prepare push", remote_log)
 
+    def test_auto_sync_commits_and_pushes_vault_edits(self):
+        (self.vault / "auto.md").write_text("automatic\n", encoding="utf-8")
+        result = self.manager.auto_sync()
+        self.assertIn("Local commit created successfully", result)
+        self.assertIn("Pushed branch 'main'", result)
+        remote_log = git(self.root, "--git-dir", str(self.remote), "log", "--oneline", "-1", "refs/heads/main").stdout
+        self.assertIn("Obsidian Sync auto-sync", remote_log)
+
+    def test_auto_sync_fast_forwards_remote_changes(self):
+        clone = self.root / "auto-clone"
+        git(self.root, "clone", "--branch", "main", str(self.remote), str(clone))
+        git(clone, "config", "user.name", "Remote User")
+        git(clone, "config", "user.email", "remote@example.invalid")
+        (clone / "remote-auto.md").write_text("remote automatic\n", encoding="utf-8")
+        git(clone, "add", "remote-auto.md")
+        git(clone, "commit", "-m", "remote auto change")
+        git(clone, "push", "origin", "main")
+        result = self.manager.auto_sync()
+        self.assertIn("Fast-forward pull completed", result)
+        self.assertTrue((self.vault / "remote-auto.md").exists())
+
     def test_pull_refuses_dirty_worktree(self):
         (self.vault / "note.md").write_text("local edits\n", encoding="utf-8")
         with self.assertRaises(SyncError):

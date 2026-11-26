@@ -40,3 +40,14 @@ Stage 3 adds manual local commits, push, and conservative pull operations.
 - Diverged histories are not auto-merged; resolve them manually before trying again.
 
 Do not put GitHub tokens in `settings.json` or in a remote URL. Configure Git authentication separately in Termux. Auto-sync is not enabled by this stage.
+
+
+## Stage 4 — Auto Sync
+
+Auto-sync can be enabled from the TUI. The default interval is 300 seconds;
+valid intervals are 60–86400 seconds. On each scheduled run, the app commits
+non-excluded Vault changes, attempts a safe fast-forward pull, then pushes the
+current branch. A divergent history or Git/network/authentication error stops
+the cycle; no force-push, reset, rebase, or automatic conflict resolution is
+performed. The first remote publication should be done manually with Stage 3
+Push before enabling auto-sync. Keep the app running for scheduled syncs.
