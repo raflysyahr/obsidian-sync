@@ -1,6 +1,6 @@
 {
   "vault_path": "/storage/emulated/0/documents/brain-vault",
-  "remote_url": "",
+  "remote_url": "https://github.com/raflysyahr/brain-vault",
   "branch": "main",
   "sync_mode": "manual_and_auto",
   "auto_sync_enabled": true,

@@ -59,3 +59,25 @@ Push before enabling auto-sync. Keep the app running for scheduled syncs.
 - Restore only to a new or empty destination; the configured Vault is never overwritten.
 - Security check warns about embedded credentials in the Git remote URL and broad settings-file permissions.
 - GitHub tokens are not stored by this application.
+
+
+## Using the dashboard
+The dashboard guides you: the line under the title always suggests the next step
+(for example "Next: add your GitHub repository URL") and the menu starts on it.
+
+| Key | Action |
+|---|---|
+| `↑` `↓` / `j` `k`, `Enter` | Move and open an item |
+| Yellow letter (`V` `I` `R` `S` `C` `P` `L` `N` `A` `T` `B` `F` `O` `U` `E` `H`) | Jump to that item and run it |
+| `?` | Help and first-time workflow |
+| `M` | Turn touch/mouse support on or off (off keeps native copy/paste) |
+| `Q` | Quit |
+
+- **Touch / mouse:** tap an item to select it, tap again to open it; swipe to scroll.
+  Mouse support is switched off automatically while you type so long-press paste keeps working.
+- **Typing:** `Enter` saves, `Esc` cancels without changing anything, `Ctrl+U` clears the line.
+  Fields are pre-filled with the current value or a sensible suggestion.
+- **Sync now (`N`)** commits, pulls (fast-forward only) and pushes in one step.
+- Long operations show a spinner; errors include a short tip on how to fix them.
+- Scheduled auto-sync never interrupts you with a pop-up: the result appears on the dashboard.
+- The terminal needs at least 30x10 characters; the layout adapts to small phone screens.
