@@ -3,7 +3,8 @@ from pathlib import Path
 from ui.components import safe_addstr, draw_frame
 
 MENU = ["Configure Vault path", "Initialize Git repository", "Git status",
-        "Configure GitHub remote", "Environment check", "About", "Quit"]
+        "Configure GitHub remote", "Commit local changes", "Push to GitHub",
+        "Pull from GitHub (safe)", "Environment check", "About", "Quit"]
 
 def dashboard(stdscr, config):
     selected = 0
@@ -37,9 +38,15 @@ def dashboard(stdscr, config):
             elif selected == 3:
                 configure_remote(stdscr, config)
             elif selected == 4:
-                show_environment(stdscr)
+                commit_changes(stdscr, config)
             elif selected == 5:
-                message(stdscr, "Obsidian Sync v0.2.0 - local Git engine.")
+                run_sync_action(stdscr, config, "push")
+            elif selected == 6:
+                run_sync_action(stdscr, config, "pull")
+            elif selected == 7:
+                show_environment(stdscr)
+            elif selected == 8:
+                message(stdscr, "Obsidian Sync v0.3.0 - manual sync manager.")
             else:
                 return
         elif key in (ord("q"), ord("Q")):
@@ -139,3 +146,55 @@ def configure_remote(stdscr, config):
         message(stdscr, result)
     except GitError as exc:
         message(stdscr, f"Git error: {exc}")
+
+
+
+def _sync_manager(config):
+    from core.sync_manager import SyncManager, SyncError
+    vault = config.data.get("vault_path", "")
+    if not vault:
+        raise SyncError("Configure the Vault path first.")
+    return SyncManager(
+        vault,
+        config.data.get("branch", "main"),
+        config.data.get("exclude", []),
+    )
+
+
+def _read_line(stdscr, title, prompt, max_bytes=200):
+    curses.echo()
+    curses.curs_set(1)
+    draw_frame(stdscr, title)
+    safe_addstr(stdscr, 4, 3, prompt)
+    safe_addstr(stdscr, 6, 3, "> ")
+    stdscr.refresh()
+    try:
+        return stdscr.getstr(6, 5, max_bytes).decode("utf-8", "replace").strip()
+    finally:
+        curses.noecho()
+        curses.curs_set(0)
+
+
+def commit_changes(stdscr, config):
+    from core.sync_manager import SyncError
+    message_text = _read_line(stdscr, "COMMIT LOCAL CHANGES", "Commit message (one line):")
+    if not message_text:
+        message(stdscr, "Commit cancelled; no message entered.")
+        return
+    try:
+        result = _sync_manager(config).commit(message_text)
+        message(stdscr, result)
+    except SyncError as exc:
+        message(stdscr, f"Sync error: {exc}")
+
+
+def run_sync_action(stdscr, config, action):
+    from core.sync_manager import SyncError
+    try:
+        manager = _sync_manager(config)
+        result = manager.push() if action == "push" else manager.pull(
+            backup=config.data.get("backup_before_pull", True)
+        )
+        message(stdscr, result)
+    except SyncError as exc:
+        message(stdscr, f"Sync error: {exc}")

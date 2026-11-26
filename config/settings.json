@@ -1,5 +1,5 @@
 {
-  "vault_path": "",
+  "vault_path": "/storage/emulated/0/documents/brain-vault",
   "remote_url": "",
   "branch": "main",
   "sync_mode": "manual_and_auto",
