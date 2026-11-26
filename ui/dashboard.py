@@ -1,4 +1,6 @@
+import contextlib
 import curses
+import textwrap
 import time
 from pathlib import Path
 from ui.components import safe_addstr, draw_frame
@@ -10,38 +12,92 @@ MENU = ["Configure Vault path", "Initialize Git repository", "Git status",
         "Create Vault backup", "Verify latest backup", "Restore backup to new folder",
         "Security check", "Environment check", "About", "Quit"]
 
+# The dashboard wakes up every TICK_MS to check the auto-sync timer, but it only
+# redraws when something visible changed, and only re-runs `git status` every
+# SNAPSHOT_TTL seconds. Screens that wait for the user switch to blocking input.
+TICK_MS = 1000
+SNAPSHOT_TTL = 5.0
+
+
+@contextlib.contextmanager
+def _blocking_input(stdscr):
+    """Disable the dashboard's getch() timeout while waiting for the user.
+
+    With a timeout active, getstr()/getch() return early (empty string / -1)
+    after TICK_MS, which closed input screens before anything could be typed.
+    """
+    stdscr.timeout(-1)
+    try:
+        yield
+    finally:
+        stdscr.timeout(TICK_MS)
+
+
+def _wait_key(stdscr):
+    with _blocking_input(stdscr):
+        return stdscr.getch()
+
+
+def _set_cursor(visibility):
+    try:
+        curses.curs_set(visibility)
+    except curses.error:
+        pass
+
+
+def _interval(config):
+    try:
+        return max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
+    except (TypeError, ValueError):
+        return 300
+
+
+def _draw_dashboard(stdscr, snapshot, selected):
+    draw_frame(stdscr, "OBSIDIAN SYNC  v0.6.0")
+    h, w = stdscr.getmaxyx()
+    safe_addstr(stdscr, 3, 3, "VAULT", curses.A_BOLD)
+    safe_addstr(stdscr, 4, 3, snapshot["vault"])
+    safe_addstr(stdscr, 6, 3,
+                f"Repository: {snapshot['repository']}   Branch: {snapshot['branch']}")
+    safe_addstr(stdscr, 7, 3, f"Remote: {snapshot['remote']}")
+    change_label = "unknown" if snapshot["changes"] is None else str(snapshot["changes"])
+    safe_addstr(stdscr, 8, 3, f"Local changes: {change_label}")
+    auto_label = f"ON / every {snapshot['interval']}s" if snapshot["auto_enabled"] else "OFF"
+    safe_addstr(stdscr, 9, 3, f"Auto-sync: {auto_label}")
+    safe_addstr(stdscr, 10, 3,
+                f"Last sync: {snapshot['last_sync_at']} [{snapshot['last_sync_status']}]")
+    if snapshot["last_sync_message"]:
+        safe_addstr(stdscr, 11, 3, snapshot["last_sync_message"].replace("\n", " | "))
+    safe_addstr(stdscr, 13, 3, "MAIN MENU", curses.A_BOLD)
+    # Keep the menu usable on small Android terminal sizes.
+    visible_rows = max(1, h - 16)
+    start = min(max(0, selected - visible_rows + 1), max(0, len(MENU) - visible_rows))
+    for row, menu_index in enumerate(range(start, min(len(MENU), start + visible_rows))):
+        attr = curses.A_REVERSE if menu_index == selected else curses.A_NORMAL
+        safe_addstr(stdscr, 14 + row, 5, MENU[menu_index], attr)
+    stdscr.refresh()  # single refresh per frame -> no flicker
+
+
 def dashboard(stdscr, config):
     selected = 0
-    next_auto_sync = time.monotonic() + max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
-    stdscr.timeout(1000)
+    interval = _interval(config)
+    next_auto_sync = time.monotonic() + interval
+    stdscr.timeout(TICK_MS)
+    snapshot = None
+    snapshot_at = 0.0
+    last_drawn = None  # (selected, height, width, snapshot) of what is on screen
     while True:
-        draw_frame(stdscr, "OBSIDIAN SYNC  v0.6.0")
+        now = time.monotonic()
+        if snapshot is None or now - snapshot_at >= SNAPSHOT_TTL:
+            snapshot = build_dashboard_snapshot(config.data)
+            snapshot_at = now
         h, w = stdscr.getmaxyx()
-        snapshot = build_dashboard_snapshot(config.data)
-        interval = snapshot["interval"]
-        safe_addstr(stdscr, 3, 3, "VAULT", curses.A_BOLD)
-        safe_addstr(stdscr, 4, 3, snapshot["vault"])
-        safe_addstr(stdscr, 6, 3,
-                    f"Repository: {snapshot['repository']}   Branch: {snapshot['branch']}")
-        safe_addstr(stdscr, 7, 3, f"Remote: {snapshot['remote']}")
-        change_label = "unknown" if snapshot["changes"] is None else str(snapshot["changes"])
-        safe_addstr(stdscr, 8, 3, f"Local changes: {change_label}")
-        auto_label = f"ON / every {snapshot['interval']}s" if snapshot["auto_enabled"] else "OFF"
-        safe_addstr(stdscr, 9, 3, f"Auto-sync: {auto_label}")
-        safe_addstr(stdscr, 10, 3,
-                    f"Last sync: {snapshot['last_sync_at']} [{snapshot['last_sync_status']}]")
-        if snapshot["last_sync_message"]:
-            safe_addstr(stdscr, 11, 3, snapshot["last_sync_message"].replace("\n", " | "))
-        safe_addstr(stdscr, 13, 3, "MAIN MENU", curses.A_BOLD)
-        # Keep the menu usable on small Android terminal sizes.
-        visible_rows = max(1, h - 16)
-        start = min(max(0, selected - visible_rows + 1), max(0, len(MENU) - visible_rows))
-        for row, menu_index in enumerate(range(start, min(len(MENU), start + visible_rows))):
-            attr = curses.A_REVERSE if menu_index == selected else curses.A_NORMAL
-            safe_addstr(stdscr, 14 + row, 5, MENU[menu_index], attr)
-        stdscr.refresh()
+        state = (selected, h, w, dict(snapshot))
+        if state != last_drawn:
+            _draw_dashboard(stdscr, snapshot, selected)
+            last_drawn = state
         key = stdscr.getch()
-        if snapshot["auto_enabled"] and time.monotonic() >= next_auto_sync:
+        if config.data.get("auto_sync_enabled", False) and time.monotonic() >= next_auto_sync:
             try:
                 result = _sync_manager(config).auto_sync(
                     backup=config.data.get("backup_before_pull", True)
@@ -51,7 +107,11 @@ def dashboard(stdscr, config):
             except Exception as exc:
                 _record_sync(config, "Error", str(exc))
                 message(stdscr, f"AUTO-SYNC STOPPED\n{exc}")
-            next_auto_sync = time.monotonic() + snapshot["interval"]
+            next_auto_sync = time.monotonic() + _interval(config)
+            snapshot = None
+            last_drawn = None
+        if key == -1:  # timeout tick, nothing pressed
+            continue
         if key in (curses.KEY_UP, ord("k")):
             selected = (selected - 1) % len(MENU)
         elif key in (curses.KEY_DOWN, ord("j")):
@@ -74,12 +134,11 @@ def dashboard(stdscr, config):
             elif selected == 7:
                 enabled = not bool(config.data.get("auto_sync_enabled", False))
                 config.set("auto_sync_enabled", enabled)
-                next_auto_sync = time.monotonic() + interval
+                next_auto_sync = time.monotonic() + _interval(config)
                 message(stdscr, "Auto-sync " + ("enabled." if enabled else "disabled."))
             elif selected == 8:
                 configure_auto_interval(stdscr, config)
-                interval = max(60, int(config.data.get("auto_sync_interval_seconds", 300)))
-                next_auto_sync = time.monotonic() + interval
+                next_auto_sync = time.monotonic() + _interval(config)
             elif selected == 9:
                 create_vault_backup(stdscr, config)
             elif selected == 10:
@@ -94,21 +153,16 @@ def dashboard(stdscr, config):
                 message(stdscr, "Obsidian Sync v0.6.0 - security and recovery tools.")
             else:
                 return
+            # An action may have changed config/Vault/Git state: refresh and redraw.
+            snapshot = None
+            last_drawn = None
         elif key in (ord("q"), ord("Q")):
             return
 
+
 def configure_vault(stdscr, config):
-    curses.echo()
-    curses.curs_set(1)
-    draw_frame(stdscr, "CONFIGURE VAULT")
-    safe_addstr(stdscr, 4, 3, "Absolute path to your Obsidian Vault:")
-    safe_addstr(stdscr, 6, 3, "> ")
-    stdscr.refresh()
-    try:
-        raw = stdscr.getstr(6, 5, 240).decode("utf-8", "replace").strip()
-    finally:
-        curses.noecho()
-        curses.curs_set(0)
+    raw = _read_line(stdscr, "CONFIGURE VAULT",
+                     "Absolute path to your Obsidian Vault:", max_bytes=240)
     if not raw:
         message(stdscr, "No path entered. Configuration unchanged.")
         return
@@ -126,12 +180,17 @@ def show_environment(stdscr):
 
 def message(stdscr, text):
     draw_frame(stdscr, "NOTICE")
-    safe_addstr(stdscr, 4, 3, text)
-    safe_addstr(stdscr, 7, 3, "Press any key to return...")
+    h, w = stdscr.getmaxyx()
+    lines = []
+    # Some callers pass a literal backslash-n; treat it as a line break.
+    for part in str(text).replace("\\n", "\n").split("\n"):
+        lines.extend(textwrap.wrap(part, max(10, w - 8)) or [""])
+    shown = lines[:max(1, h - 9)]
+    for index, line in enumerate(shown):
+        safe_addstr(stdscr, 4 + index, 3, line)
+    safe_addstr(stdscr, min(4 + len(shown) + 1, h - 3), 3, "Press any key to return...")
     stdscr.refresh()
-    stdscr.timeout(-1)
-    stdscr.getch()
-    stdscr.timeout(1000)
+    _wait_key(stdscr)
 
 
 def _git_engine(config):
@@ -168,22 +227,13 @@ def show_git_status(stdscr, config):
         safe_addstr(stdscr, 8, 3, "Working tree clean")
     safe_addstr(stdscr, curses.LINES - 2, 3, "Press any key to return")
     stdscr.refresh()
-    stdscr.getch()
+    _wait_key(stdscr)
 
 
 def configure_remote(stdscr, config):
     from core.git_engine import GitError
-    curses.echo()
-    curses.curs_set(1)
-    draw_frame(stdscr, "CONFIGURE GITHUB REMOTE")
-    safe_addstr(stdscr, 3, 3, "Paste repository URL (HTTPS or SSH):")
-    safe_addstr(stdscr, 5, 3, "> ")
-    stdscr.refresh()
-    try:
-        url = stdscr.getstr(5, 5, 240).decode("utf-8", "replace").strip()
-    finally:
-        curses.noecho()
-        curses.curs_set(0)
+    url = _read_line(stdscr, "CONFIGURE GITHUB REMOTE",
+                     "Paste repository URL (HTTPS or SSH):", max_bytes=240)
     if not url:
         message(stdscr, "No URL entered. Configuration unchanged.")
         return
@@ -193,7 +243,6 @@ def configure_remote(stdscr, config):
         message(stdscr, result)
     except GitError as exc:
         message(stdscr, f"Git error: {exc}")
-
 
 
 def _sync_manager(config):
@@ -209,17 +258,20 @@ def _sync_manager(config):
 
 
 def _read_line(stdscr, title, prompt, max_bytes=200):
-    curses.echo()
-    curses.curs_set(1)
+    """Show a prompt and wait (without timeout) until the user presses Enter."""
     draw_frame(stdscr, title)
     safe_addstr(stdscr, 4, 3, prompt)
     safe_addstr(stdscr, 6, 3, "> ")
     stdscr.refresh()
+    curses.flushinp()  # drop stray keypresses (e.g. the Enter that opened this screen)
+    curses.echo()
+    _set_cursor(1)
     try:
-        return stdscr.getstr(6, 5, max_bytes).decode("utf-8", "replace").strip()
+        with _blocking_input(stdscr):
+            return stdscr.getstr(6, 5, max_bytes).decode("utf-8", "replace").strip()
     finally:
         curses.noecho()
-        curses.curs_set(0)
+        _set_cursor(0)
 
 
 def commit_changes(stdscr, config):

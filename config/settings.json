@@ -3,8 +3,8 @@
   "remote_url": "",
   "branch": "main",
   "sync_mode": "manual_and_auto",
-  "auto_sync_enabled": false,
-  "auto_sync_interval_seconds": 300,
+  "auto_sync_enabled": true,
+  "auto_sync_interval_seconds": 1000,
   "exclude": [
     ".obsidian/workspace.json",
     ".obsidian/workspace-mobile.json",

@@ -15,4 +15,5 @@ def draw_frame(stdscr, title):
     stdscr.box()
     safe_addstr(stdscr, 1, 3, f" {title} ", curses.A_BOLD)
     safe_addstr(stdscr, h - 2, 2, "↑/↓ Navigate  Enter Select  Q Quit")
-    stdscr.refresh()
+    # No refresh here: callers draw their content and refresh once, otherwise
+    # the half-drawn frame is flushed to the terminal first and flickers.
