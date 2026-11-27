@@ -113,15 +113,20 @@ def _set_cursor(visibility):
         pass
 
 
-def ensure_size(stdscr):
+def restore_idle(stdscr):
+    """Put back the dashboard's idle timeout after a page that managed its own."""
+    stdscr.timeout(_idle_timeout)
+
+
+def ensure_size(stdscr, min_w=MIN_W, min_h=MIN_H):
     """Block until the terminal is large enough (press Q to continue anyway)."""
     while True:
         h, w = stdscr.getmaxyx()
-        if h >= MIN_H and w >= MIN_W:
+        if h >= min_h and w >= min_w:
             return
         stdscr.erase()
         safe_addstr(stdscr, 0, 0, f"Terminal too small ({w}x{h}).", style("warn"))
-        safe_addstr(stdscr, 1, 0, f"Enlarge to {MIN_W}x{MIN_H}+ or press Q.")
+        safe_addstr(stdscr, 1, 0, f"Enlarge to {min_w}x{min_h}+ or press Q.")
         stdscr.refresh()
         with blocking(stdscr):
             kind, value = read_event(stdscr)

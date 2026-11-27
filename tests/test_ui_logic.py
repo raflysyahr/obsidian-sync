@@ -1,7 +1,8 @@
 import unittest
 
 from ui.logic import (build_status_lines, explain_error, fit_status_lines, format_duration,
-                      mask_url, next_step, parse_interval, shorten, validate_remote, wrap_lines)
+                      layout_buttons, mask_url, next_step, parse_interval, shorten,
+                      validate_remote, wrap_lines)
 
 
 def make_view(**overrides):
@@ -122,6 +123,28 @@ class StatusLineTests(unittest.TestCase):
         self.assertTrue(any("boom" in row for row in self.flatten(build_status_lines(failed, 80))))
         self.assertFalse(any("boom" in row for row in
                              self.flatten(build_status_lines(make_view(last_sync_message="boom"), 80))))
+
+
+class ButtonLayoutTests(unittest.TestCase):
+    def test_everything_fits_on_one_page(self):
+        pages = layout_buttons([6, 6, 6], avail=40)
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(pages[0], [(0, 0, 0), (0, 7, 1), (0, 14, 2)])
+
+    def test_wraps_to_second_row_then_pages_with_room_for_more_button(self):
+        widths = [8] * 12
+        pages = layout_buttons(widths, avail=30, rows=2)
+        self.assertGreater(len(pages), 1)
+        placed = sorted(i for page in pages for _, _, i in page)
+        self.assertEqual(placed, list(range(12)))          # nothing lost
+        for page in pages:
+            for row, x, index in page:
+                limit = 30 - (4 if row == 1 else 0)
+                self.assertLessEqual(x + widths[index], limit)
+
+    def test_oversized_button_is_still_placed(self):
+        pages = layout_buttons([50], avail=20)
+        self.assertEqual(pages, [[(0, 0, 0)]])
 
 
 if __name__ == "__main__":

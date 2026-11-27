@@ -81,3 +81,23 @@ The dashboard guides you: the line under the title always suggests the next step
 - Long operations show a spinner; errors include a short tip on how to fix them.
 - Scheduled auto-sync never interrupts you with a pop-up: the result appears on the dashboard.
 - The terminal needs at least 30x10 characters; the layout adapts to small phone screens.
+
+## Markdown editor (touch-first)
+Press `W` on the dashboard (or tap **Markdown editor**) to open a note from your Vault or start a new one.
+Everything works with taps only; the on-screen keyboard is needed just for typing.
+
+- **Select:** tap a word to select it. Then use the **Pilih** tab: `+→` / `←+` add one word, `Kalimat`,
+  `Baris`, `Para`, `Semua` select larger parts, and `Rentang` lets you tap a first and a last word.
+- **Blok** tab (whole lines): `H1` `H2` `H3`, `¶` plain paragraph, bullet, numbered, task, `[x]` check,
+  quote, code block, callout, divider. Selecting 3 words and tapping `H2` turns exactly those words
+  into a heading and leaves the rest of the sentence as a paragraph. Tap again to switch it off.
+- **Teks** tab (inline): bold, italic, strike, highlight, code, `[[wikilink]]`, link, clear formatting.
+- **Edit** tab: undo/redo, copy/cut/paste, delete, move line up/down, indent, new line.
+- **Alat** tab: join hard-wrapped lines, sentences to list, tidy spaces, find & replace,
+  **Tebak** (rule-based auto-format: bullets, numbered lists, obvious titles; no AI), type/paste mode, preview.
+- **File** tab and the title bar: `Simpan` / `Keluar`, save as, open another note, info.
+
+Safety: the editor only adds or removes Markdown markers and never rewrites your words. A `.txt` is saved
+as a **new** `.md` file and the original is left untouched. Overwriting an existing note first copies it to
+`<vault parent>/.obsidian-sync-backups/edits/`. Writes are atomic and Undo is always available.
+Files larger than 1 MB or not in UTF-8 are refused. The terminal needs at least 36x12 characters.

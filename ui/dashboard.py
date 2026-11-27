@@ -16,7 +16,8 @@ from core.git_engine import GitEngine, GitError
 from core.recovery import (RecoveryError, create_backup, list_backups, restore_to_new_directory,
                            security_report, verify_backup)
 from core.sync_manager import SyncError, SyncManager
-from ui import pages
+from core.noteio import NoteError
+from ui import editor, pages
 from ui.components import draw_frame, safe_addstr, style
 from ui.logic import (NOT_CONFIGURED, build_status_lines, explain_error, fit_status_lines,
                       format_duration, mask_url, next_step, parse_interval, shorten,
@@ -25,7 +26,7 @@ from ui.logic import (NOT_CONFIGURED, build_status_lines, explain_error, fit_sta
 VERSION = "0.6.0"
 TICK_MS = 1000          # idle wake-up: auto-sync timer, countdown, flash expiry
 REFRESH_SECONDS = 5.0   # how often the Git status is re-read in the background
-ERRORS = (GitError, SyncError, RecoveryError, ValueError, OSError)
+ERRORS = (GitError, SyncError, RecoveryError, NoteError, ValueError, OSError)
 
 Item = namedtuple("Item", "key label desc")
 
@@ -40,6 +41,7 @@ MENU = [
     Item("N", "Sync now", "Commit, pull and push in one step."),
     Item("A", "Auto-sync", "Turn scheduled syncing on or off (runs while this app is open)."),
     Item("T", "Auto-sync interval", "How often auto-sync runs (1 minute to 24 hours)."),
+    Item("W", "Markdown editor", "Format notes by tapping words and toolbar buttons (touch-first)."),
     Item("B", "Create backup", "Make a verified ZIP backup of the Vault."),
     Item("F", "Verify backup", "Check the newest backup against its checksums."),
     Item("O", "Restore backup", "Restore the newest backup into a NEW folder."),
@@ -487,6 +489,16 @@ def show_environment(app):
     pages.show_page(app.stdscr, "ENVIRONMENT", items)
 
 
+def open_editor(app):
+    try:
+        vault = _vault(app.config)
+        editor.run_editor(app.stdscr, vault)
+    except ERRORS as exc:
+        return _fail(app, exc)
+    finally:
+        pages.set_mouse(app.mouse)  # the editor needs touch; restore the user's choice
+
+
 def show_help(app):
     items = [(f"Obsidian Sync v{VERSION}", "head"),
              ("Keep one Obsidian Vault in sync with GitHub from Termux.", "dim"), ("", "text"),
@@ -502,6 +514,10 @@ def show_help(app):
              ("3  R  add your GitHub repository URL", "text"),
              ("4  C  commit, then P push (once, to publish)", "text"),
              ("After that: N syncs everything, or turn on auto-sync with A.", "text"), ("", "text"),
+             ("MARKDOWN EDITOR (W)", "head"),
+             ("Tap a word to select it. Use the toolbar tabs: Pilih (select), Blok (headings, "
+              "lists), Teks (bold, italic), Edit, Alat, File. Selecting words then tapping H2 "
+              "turns just those words into a heading.", "text"), ("", "text"),
              ("SAFETY", "head"),
              ("No force-push, reset or rebase. Pull is fast-forward only and "
               "makes a backup first. Tokens are never stored by this app.", "text")]
@@ -512,7 +528,7 @@ HANDLERS = {
     "V": configure_vault, "I": initialize_git, "R": configure_remote, "S": show_git_status,
     "C": commit_changes, "P": lambda app: run_sync_action(app, "push"),
     "L": lambda app: run_sync_action(app, "pull"), "N": sync_now, "A": toggle_auto,
-    "T": configure_interval, "B": create_vault_backup, "F": verify_latest_backup,
+    "T": configure_interval, "W": open_editor, "B": create_vault_backup, "F": verify_latest_backup,
     "O": restore_backup_ui, "U": show_security_check, "E": show_environment, "H": show_help,
 }
 

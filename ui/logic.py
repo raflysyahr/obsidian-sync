@@ -191,3 +191,29 @@ def fit_status_lines(lines, max_rows):
         return []
     keep = sorted(range(len(lines)), key=lambda i: lines[i][0])[:max_rows]
     return [lines[i][1] for i in sorted(keep)]
+
+
+def layout_buttons(widths, avail, rows=2, gap=1, more_width=4):
+    """Place buttons left-to-right in `rows` rows; overflow goes to extra pages.
+
+    Returns a list of pages; each page is [(row, x, button_index)]. When there is
+    more than one page, every page keeps `more_width` columns free in its last row
+    for a "next page" button.
+    """
+    def build(reserve):
+        pages, row, x = [[]], 0, 0
+        for index, width in enumerate(widths):
+            while True:
+                limit = avail - (reserve if row == rows - 1 else 0)
+                if x == 0 or x + width <= limit:
+                    break
+                row, x = row + 1, 0
+                if row >= rows:
+                    pages.append([])
+                    row = 0
+            pages[-1].append((row, x, index))
+            x += width + gap
+        return pages
+
+    pages = build(0)
+    return pages if len(pages) == 1 else build(more_width)

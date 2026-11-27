@@ -1,7 +1,7 @@
 {
-  "vault_path": "/storage/emulated/0/documents/brain-vault",
+  "vault_path": "/storage/emulated/0/documents/second-brain-AI",
   "remote_url": "https://github.com/raflysyahr/brain-vault",
-  "branch": "main",
+  "branch": "master",
   "sync_mode": "manual_and_auto",
   "auto_sync_enabled": true,
   "auto_sync_interval_seconds": 1000,
@@ -12,5 +12,8 @@
     ".DS_Store",
     "Thumbs.db"
   ],
-  "backup_before_pull": true
+  "backup_before_pull": true,
+  "last_sync_at": "2026-11-26 23:45:47 WIB",
+  "last_sync_status": "Success",
+  "last_sync_message": "Already up to date (or local branch is ahead); nothing pulled."
 }
